@@ -65,7 +65,7 @@ export function MapView({ onChaserClick }: { onChaserClick?: (chaser: Chaser) =>
   }, [])
 
   return (
-    <div className="map-wrapper">
+    <div className="map-wrapper" style={{ height: 'calc(100vh - 100px)', minHeight: '500px', display: 'flex' }}>
       <MapContainer 
         center={[34.7465, -92.2896]} 
         zoom={8} 

@@ -121,30 +121,51 @@ export function ChaserManagement() {
                 border: `1px solid ${chaser.is_active ? 'var(--accent-blue)' : 'var(--border-color)'}`
               }}
             >
-              <div>
-                <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{chaser.name}</div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{chaser.callsign || 'No Callsign'}</div>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <img 
+                  src={chaser.avatar_url 
+                    ? `https://rbidtdkehdmzmmvpxjqh.supabase.co/storage/v1/object/public/avatars/${chaser.avatar_url}`
+                    : 'https://via.placeholder.com/60?text=?'
+                  } 
+                  alt={chaser.name}
+                  style={{
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    backgroundColor: 'var(--border-color)'
+                  }}
+                />
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{chaser.name}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+                    {chaser.callsign || 'No Callsign'}
+                  </div>
+                  {chaser.bio && (
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: '1.4' }}>
+                      {chaser.bio}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button 
+                  className={chaser.is_active ? "btn-outline" : "btn-primary"}
                   onClick={() => toggleStatus(chaser.id, chaser.is_active)}
-                  className={chaser.is_active ? 'btn-primary' : 'btn-outline'}
-                  style={{ padding: '0.4rem 0.8rem' }}
                 >
-                  {chaser.is_active ? '🟢 Active' : '🔴 Inactive'}
+                  {chaser.is_active ? 'Set Inactive' : 'Set Active'}
                 </button>
-                
                 <button 
+                  className="btn-outline" 
+                  style={{ borderColor: 'var(--accent-red)', color: 'var(--accent-red)' }}
                   onClick={() => deleteChaser(chaser.id)}
-                  style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '0.5rem', padding: '0.4rem 0.8rem', cursor: 'pointer' }}
                 >
-                  🗑️ Delete
+                  Delete
                 </button>
               </div>
             </div>
           ))}
-          {chasers.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No chasers registered yet.</p>}
         </div>
       </div>
     </div>
