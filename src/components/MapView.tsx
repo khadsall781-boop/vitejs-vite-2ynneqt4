@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMap, LayersControl } from 'react-leaflet'
 import { Icon } from 'leaflet'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../lib/database.types'
+import 'leaflet/dist/leaflet.css'
 
 type Chaser = Database['public']['Tables']['chasers']['Row']
 type ChaserLocation = Database['public']['Tables']['chaser_locations']['Row']
@@ -11,171 +12,126 @@ interface ChaserWithLocation extends Chaser {
   location?: ChaserLocation
 }
 
-interface MapViewProps {
-  onChaserClick: (chaser: ChaserWithLocation) => void
-}
+const chaserIcon = new Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+})
 
-function MapUpdater({ chasers }: { chasers: ChaserWithLocation[] }) {
+function MapController({ center }: { center: [number, number] | null }) {
   const map = useMap()
-
   useEffect(() => {
-    if (chasers.length > 0) {
-      const locations = chasers
-        .filter(c => c.location)
-        .map(c => [c.location!.latitude, c.location!.longitude] as [number, number])
-
-      if (locations.length > 0) {
-        map.fitBounds(locations, { padding: [50, 50], maxZoom: 10 })
-      }
+    if (center) {
+      map.setView(center, 13, { animate: true })
     }
-  }, [chasers, map])
-
+  }, [center, map])
   return null
 }
 
-export function MapView({ onChaserClick }: MapViewProps) {
+export function MapView({ onChaserClick }: { onChaserClick?: (chaser: Chaser) => void }) {
   const [chasers, setChasers] = useState<ChaserWithLocation[]>([])
-  const [center] = useState<[number, number]>([39.8283, -98.5795])
+  const [selectedPos, setSelectedPos] = useState<[number, number] | null>(null)
 
   useEffect(() => {
-    loadChasers()
-
-    const channel = supabase
-      .channel('location-updates')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'chaser_locations' },
-        () => {
-          loadChasers()
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'chasers' },
-        () => {
-          loadChasers()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
+    const fetchChasers = async () => {
+      const { data } = await supabase
+        .from('chasers')
+        .select('*, chaser_locations(*)')
+        .eq('is_active', true)
+      
+      if (data) {
+        setChasers(data.map(c => ({ 
+          ...c, 
+          location: c.chaser_locations?.[0] 
+        })))
+      }
     }
+    
+    fetchChasers()
+    
+    const channel = supabase
+      .channel('loc-updates')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'chaser_locations' 
+      }, () => fetchChasers())
+      .subscribe()
+      
+    return () => { supabase.removeChannel(channel) }
   }, [])
 
-  async function loadChasers() {
-    const { data: chasersData, error: chasersError } = await supabase
-      .from('chasers')
-      .select('*')
-      .eq('is_active', true)
-      .order('name')
-
-    if (chasersError) {
-      console.error('Error loading chasers:', chasersError)
-      return
-    }
-
-    const chasersWithLocations: ChaserWithLocation[] = await Promise.all(
-      (chasersData || []).map(async (chaser: Chaser) => {
-        const { data: locationData } = await supabase
-          .from('chaser_locations')
-          .select('*')
-          .eq('chaser_id', chaser.id)
-          .order('timestamp', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        return {
-          ...chaser,
-          location: locationData || undefined,
-        } as ChaserWithLocation
-      })
-    )
-
-    setChasers(chasersWithLocations)
-  }
-
-  const chaserIcon = new Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41],
-  })
-
   return (
-    <div className="map-container">
-      <MapContainer
-        center={center}
-        zoom={5}
+    <div className="map-wrapper">
+      <MapContainer 
+        center={[34.7465, -92.2896]} 
+        zoom={8} 
+        maxZoom={18}
         style={{ height: '100%', width: '100%' }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <LayersControl position="topright">
+          <LayersControl.BaseLayer checked name="Dark Map">
+            <TileLayer 
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+              maxZoom={18}
+            />
+          </LayersControl.BaseLayer>
+          
+          {/* Replaced RainViewer with IEM NEXRAD - No more zoom errors */}
+          <LayersControl.Overlay checked name="Live Radar (NEXRAD)">
+            <TileLayer 
+              url="https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png"
+              opacity={0.5}
+              attribution='&copy; IEM NEXRAD'
+              zIndex={100}
+            />
+          </LayersControl.Overlay>
+        </LayersControl>
+        
+        <MapController center={selectedPos} />
 
-        {chasers.filter(c => c.location).map((chaser) => (
-          <Marker
-            key={chaser.id}
-            position={[chaser.location!.latitude, chaser.location!.longitude]}
-            icon={chaserIcon}
-            eventHandlers={{
-              click: () => onChaserClick(chaser),
-            }}
-          >
-            <Popup>
-              <div className="marker-popup">
-                <h3>{chaser.name}</h3>
-                <p className="callsign">{chaser.callsign}</p>
-                {chaser.location?.speed && (
-                  <p>Speed: {chaser.location.speed.toFixed(1)} mph</p>
-                )}
-                {chaser.location?.heading !== null && chaser.location?.heading !== undefined && (
-                  <p>Heading: {chaser.location.heading}°</p>
-                )}
-                <button
-                  className="btn-primary-small"
-                  onClick={() => onChaserClick(chaser)}
-                >
-                  View Details
-                </button>
-              </div>
-            </Popup>
-          </Marker>
+        {chasers.map((chaser) => (
+          chaser.location && (
+            <Marker 
+              key={chaser.id} 
+              position={[chaser.location.latitude, chaser.location.longitude]} 
+              icon={chaserIcon}
+              eventHandlers={{ 
+                click: () => { 
+                  setSelectedPos([chaser.location!.latitude, chaser.location!.longitude]); 
+                  onChaserClick?.(chaser); 
+                } 
+              }}
+            >
+              <Popup>
+                <div className="map-popup">
+                  <strong>{chaser.name}</strong>
+                  <p>{chaser.callsign || 'No Callsign'}</p>
+                </div>
+              </Popup>
+            </Marker>
+          )
         ))}
-
-        <MapUpdater chasers={chasers} />
       </MapContainer>
 
       <div className="active-chasers-panel">
-        <h3>Active Chasers</h3>
-        {chasers.length === 0 ? (
-          <p className="empty-state">No active chasers</p>
-        ) : (
-          <div className="chasers-list-sidebar">
-            {chasers.map((chaser) => (
-              <div
-                key={chaser.id}
-                className={`chaser-item ${chaser.location ? 'has-location' : 'no-location'}`}
-                onClick={() => chaser.location && onChaserClick(chaser)}
-              >
-                {chaser.avatar_url && (
-                  <img src={chaser.avatar_url} alt={chaser.name} className="chaser-avatar-small" />
-                )}
-                <div className="chaser-details">
-                  <h4>{chaser.name}</h4>
-                  <p className="callsign">{chaser.callsign}</p>
-                  {!chaser.location && <p className="status">No location data</p>}
-                </div>
-                {chaser.location && (
-                  <div className="status-indicator active"></div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        <h3>Live Chasers ({chasers.length})</h3>
+        <div className="chasers-list-sidebar">
+          {chasers.map(chaser => (
+            <div 
+              key={chaser.id} 
+              className="chaser-item" 
+              onClick={() => chaser.location && setSelectedPos([chaser.location.latitude, chaser.location.longitude])}
+            >
+              <span>{chaser.name}</span>
+            </div>
+          ))}
+          {chasers.length === 0 && <p className="text-muted">No active chasers</p>}
+        </div>
       </div>
     </div>
   )

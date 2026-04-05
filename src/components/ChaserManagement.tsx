@@ -3,184 +3,148 @@ import { supabase } from '../lib/supabase'
 import type { Database } from '../lib/database.types'
 
 type Chaser = Database['public']['Tables']['chasers']['Row']
-type ChaserInsert = Database['public']['Tables']['chasers']['Insert']
 
-interface ChaserManagementProps {
-  onClose: () => void
-}
-
-export function ChaserManagement({ onClose }: ChaserManagementProps) {
+export function ChaserManagement() {
   const [chasers, setChasers] = useState<Chaser[]>([])
-  const [isAdding, setIsAdding] = useState(false)
-  const [formData, setFormData] = useState({
-    name: '',
-    callsign: '',
-    stream_url: '',
-    avatar_url: '',
-  })
+  const [name, setName] = useState('')
+  const [callsign, setCallsign] = useState('')
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    loadChasers()
+    fetchChasers()
   }, [])
 
-  async function loadChasers() {
-    const { data, error } = await supabase
+  const fetchChasers = async () => {
+    const { data } = await supabase
       .from('chasers')
       .select('*')
-      .order('name')
-
-    if (error) {
-      console.error('Error loading chasers:', error)
-      return
-    }
-
-    setChasers(data || [])
+      .order('created_at', { ascending: false })
+    if (data) setChasers(data)
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  const handleAddChaser = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
 
-    const insertData: ChaserInsert = {
-      name: formData.name,
-      callsign: formData.callsign,
-      stream_url: formData.stream_url || null,
-      avatar_url: formData.avatar_url || null,
+    try {
+      const { data: newChaser, error: chaserError } = await supabase
+        .from('chasers')
+        .insert([{ name, callsign, is_active: true }])
+        .select()
+        .single()
+
+      if (chaserError) throw chaserError
+
+      // Initialize with default location (North Little Rock area)
+      await supabase.from('chaser_locations').insert([{
+        chaser_id: newChaser.id,
+        latitude: 34.7465,
+        longitude: -92.2896,
+        timestamp: new Date().toISOString()
+      }])
+
+      setName('')
+      setCallsign('')
+      fetchChasers()
+    } catch (error: any) {
+      alert(error.message)
+    } finally {
+      setLoading(false)
     }
+  }
 
+  const toggleStatus = async (id: string, currentStatus: boolean) => {
     const { error } = await supabase
       .from('chasers')
-      .insert(insertData as any)
-
-    if (error) {
-      console.error('Error adding chaser:', error)
-      alert('Error adding chaser: ' + error.message)
-      return
-    }
-
-    setFormData({ name: '', callsign: '', stream_url: '', avatar_url: '' })
-    setIsAdding(false)
-    loadChasers()
+      .update({ is_active: !currentStatus })
+      .eq('id', id)
+    
+    if (error) alert(error.message)
+    else fetchChasers()
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('Are you sure you want to delete this chaser?')) return
+  const deleteChaser = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this chaser? This will remove all location history.')) return
 
     const { error } = await supabase
       .from('chasers')
       .delete()
       .eq('id', id)
 
-    if (error) {
-      console.error('Error deleting chaser:', error)
-      return
-    }
-
-    loadChasers()
-  }
-
-  async function toggleActive(chaser: Chaser) {
-    const result: any = await (supabase as any)
-      .from('chasers')
-      .update({ is_active: !chaser.is_active })
-      .eq('id', chaser.id)
-
-    if (result.error) {
-      console.error('Error updating chaser:', result.error)
-      return
-    }
-
-    loadChasers()
+    if (error) alert(error.message)
+    else fetchChasers()
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>Manage Chasers</h2>
-          <button className="close-btn" onClick={onClose}>×</button>
-        </div>
+    <div className="management-container" style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
+      <div className="card" style={{ background: 'var(--bg-card)', padding: '2rem', borderRadius: '1rem', border: '1px solid var(--border-color)' }}>
+        <h2 style={{ marginBottom: '1.5rem' }}>
+          👤 Register New Chaser
+        </h2>
+        
+        <form onSubmit={handleAddChaser} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+          <input 
+            className="btn-outline"
+            style={{ flex: '1', minWidth: '200px', padding: '0.75rem', background: 'var(--bg-dark)', color: 'white' }}
+            placeholder="Chaser Name" 
+            value={name} 
+            onChange={(e) => setName(e.target.value)} 
+            required 
+          />
+          <input 
+            className="btn-outline"
+            style={{ flex: '1', minWidth: '200px', padding: '0.75rem', background: 'var(--bg-dark)', color: 'white' }}
+            placeholder="Callsign" 
+            value={callsign} 
+            onChange={(e) => setCallsign(e.target.value)} 
+          />
+          <button className="btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
+            {loading ? 'Processing...' : "Add to Tornado Tacklers' Map"}
+          </button>
+        </form>
+      </div>
 
-        <div className="modal-body">
-          {!isAdding && (
-            <button className="btn-primary" onClick={() => setIsAdding(true)}>
-              + Add New Chaser
-            </button>
-          )}
+      <div style={{ marginTop: '3rem' }}>
+        <h3 style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>Active Roster</h3>
+        <div style={{ display: 'grid', gap: '1rem' }}>
+          {chasers.map(chaser => (
+            <div 
+              key={chaser.id} 
+              className="chaser-item" 
+              style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                background: 'var(--bg-card)',
+                padding: '1rem',
+                borderRadius: '0.5rem',
+                border: `1px solid ${chaser.is_active ? 'var(--accent-blue)' : 'var(--border-color)'}`
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{chaser.name}</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{chaser.callsign || 'No Callsign'}</div>
+              </div>
 
-          {isAdding && (
-            <form onSubmit={handleSubmit} className="chaser-form">
-              <h3>Add New Chaser</h3>
-              <input
-                type="text"
-                placeholder="Name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-              />
-              <input
-                type="text"
-                placeholder="Callsign (unique identifier)"
-                value={formData.callsign}
-                onChange={(e) => setFormData({ ...formData, callsign: e.target.value })}
-                required
-              />
-              <input
-                type="url"
-                placeholder="Stream URL (optional)"
-                value={formData.stream_url}
-                onChange={(e) => setFormData({ ...formData, stream_url: e.target.value })}
-              />
-              <input
-                type="url"
-                placeholder="Avatar URL (optional)"
-                value={formData.avatar_url}
-                onChange={(e) => setFormData({ ...formData, avatar_url: e.target.value })}
-              />
-              <div className="form-actions">
-                <button type="submit" className="btn-primary">Add Chaser</button>
-                <button type="button" className="btn-secondary" onClick={() => setIsAdding(false)}>
-                  Cancel
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button 
+                  onClick={() => toggleStatus(chaser.id, chaser.is_active)}
+                  className={chaser.is_active ? 'btn-primary' : 'btn-outline'}
+                  style={{ padding: '0.4rem 0.8rem' }}
+                >
+                  {chaser.is_active ? '🟢 Active' : '🔴 Inactive'}
+                </button>
+                
+                <button 
+                  onClick={() => deleteChaser(chaser.id)}
+                  style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '0.5rem', padding: '0.4rem 0.8rem', cursor: 'pointer' }}
+                >
+                  🗑️ Delete
                 </button>
               </div>
-            </form>
-          )}
-
-          <div className="chasers-list">
-            <h3>Current Chasers</h3>
-            {chasers.length === 0 ? (
-              <p className="empty-state">No chasers added yet</p>
-            ) : (
-              <div className="chasers-grid">
-                {chasers.map((chaser) => (
-                  <div key={chaser.id} className="chaser-card">
-                    <div className="chaser-info">
-                      {chaser.avatar_url && (
-                        <img src={chaser.avatar_url} alt={chaser.name} className="chaser-avatar" />
-                      )}
-                      <div>
-                        <h4>{chaser.name}</h4>
-                        <p className="callsign">{chaser.callsign}</p>
-                        <label className="active-toggle">
-                          <input
-                            type="checkbox"
-                            checked={chaser.is_active}
-                            onChange={() => toggleActive(chaser)}
-                          />
-                          <span>Active</span>
-                        </label>
-                      </div>
-                    </div>
-                    <button
-                      className="btn-delete"
-                      onClick={() => handleDelete(chaser.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+            </div>
+          ))}
+          {chasers.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No chasers registered yet.</p>}
         </div>
       </div>
     </div>
