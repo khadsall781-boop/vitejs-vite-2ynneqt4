@@ -138,17 +138,7 @@ export function ProfileEdit() {
             value={bio}
             onChange={(e) => setBio(e.target.value)}
             rows={5}
-            placeholder="Tell us about your setup, your experience, or your favorite storm..."
-            style={{ 
-              width: '100%', 
-              padding: '0.75rem', 
-              background: 'var(--bg-dark)', 
-              color: 'var(--text-main)', 
-              border: '1px solid var(--border-color)', 
-              borderRadius: '0.5rem',
-              resize: 'vertical'
-            }}
-          />
+           />
         </div>
 
         <button type="submit" className="btn-primary" disabled={saving}>
